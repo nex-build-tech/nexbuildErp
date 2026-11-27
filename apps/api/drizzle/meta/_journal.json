@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1794558998727,
+      "tag": "0000_smart_jubilee",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1794567226798,
+      "tag": "0001_open_living_lightning",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1794568726450,
+      "tag": "0002_outstanding_namora",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1794573309562,
+      "tag": "0003_organic_pandemic",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1794573948810,
+      "tag": "0004_certain_ben_urich",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1794899470125,
+      "tag": "0005_numerous_warlock",
+      "breakpoints": true
+    }
+  ]
+}

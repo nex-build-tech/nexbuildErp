@@ -1,0 +1,1129 @@
+// ============================================================
+// GoodsFlow Pro — Main Application Logic
+// ============================================================
+
+// ─── INIT ────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        document.getElementById('app-loader').style.opacity = '0';
+        setTimeout(() => document.getElementById('app-loader').style.display = 'none', 500);
+    }, 800);
+    navigateTo('dashboard');
+    updateDate();
+});
+
+function updateDate() {
+    const d = new Date();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    document.getElementById('current-date').textContent = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// ─── SIDEBAR / NAVIGATION ───────────────────────────────────
+function toggleSidebar() {
+    const sb = document.getElementById('sidebar');
+    const ov = document.getElementById('sidebar-overlay');
+    sb.classList.toggle('-translate-x-full');
+    ov.classList.toggle('hidden');
+}
+
+function navigateTo(page) {
+    // Update nav
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const active = document.querySelector(`[data-page="${page}"]`);
+    if (active) active.classList.add('active');
+
+    // Close mobile sidebar
+    const sb = document.getElementById('sidebar');
+    if (sb.classList.contains('lg:translate-x-0') && !sb.classList.contains('-translate-x-full')) {
+        // desktop, do nothing
+    } else if (!sb.classList.contains('-translate-x-full')) {
+        toggleSidebar();
+    }
+
+    // Render page
+    const titles = {
+        'dashboard': ['Dashboard', 'Overview of your goods management'],
+        'vendors': ['Vendors', 'Manage your 500+ vendor network'],
+        'purchase-orders': ['Purchase Orders', 'Track all purchase orders & quotations'],
+        'goods-receipt': ['Goods Receipt (GRN)', 'Record & verify incoming goods'],
+        'inventory': ['Inventory', 'Real-time stock levels across warehouses'],
+        'sites': ['Sites', 'Manage your 45 active project sites'],
+        'material-issue': ['Material Issue', 'Track goods issued to sites'],
+        'reports': ['Reports & Analytics', 'Advanced insights & reports'],
+        'settings': ['Settings', 'System configuration & user management'],
+    };
+    const [t, s] = titles[page] || ['', ''];
+    document.getElementById('page-title').textContent = t;
+    document.getElementById('page-subtitle').textContent = s;
+
+    destroyCharts();
+    const main = document.getElementById('main-content');
+    main.innerHTML = getPageContent(page);
+
+    if (page === 'dashboard') createDashboardCharts();
+}
+
+// ─── PAGE CONTENT RENDERER ──────────────────────────────────
+function getPageContent(page) {
+    switch(page) {
+        case 'dashboard': return renderDashboard();
+        case 'vendors': return renderVendors();
+        case 'purchase-orders': return renderPurchaseOrders();
+        case 'goods-receipt': return renderGoodsReceipt();
+        case 'inventory': return renderInventory();
+        case 'sites': return renderSites();
+        case 'material-issue': return renderMaterialIssue();
+        case 'reports': return renderReports();
+        case 'settings': return renderSettings();
+        default: return '<p>Page not found</p>';
+    }
+}
+
+// ─── UTILITIES ──────────────────────────────────────────────
+function fmt(n) { return '₹' + Number(n).toLocaleString('en-IN'); }
+function fmtNum(n) { return Number(n).toLocaleString('en-IN'); }
+function statusBadge(status) {
+    const map = {
+        'draft': 'bg-surface-100 text-surface-600',
+        'approved': 'bg-blue-50 text-blue-700',
+        'partially-received': 'bg-amber-50 text-amber-700',
+        'fully-received': 'bg-green-50 text-green-700',
+        'closed': 'bg-surface-100 text-surface-500',
+        'active': 'bg-green-50 text-green-700',
+        'inactive': 'bg-red-50 text-red-600',
+        'completed': 'bg-blue-50 text-blue-700',
+        'issued': 'bg-green-50 text-green-700',
+        'pending': 'bg-amber-50 text-amber-700',
+    };
+    const cls = map[status] || 'bg-surface-100 text-surface-600';
+    return `<span class="px-2.5 py-1 rounded-full text-xs font-medium ${cls}">${status.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>`;
+}
+
+function showToast(msg, type = 'success') {
+    const tc = document.getElementById('toast-container');
+    const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
+    const icons = { success: '✓', error: '✕', info: 'ℹ' };
+    const toast = document.createElement('div');
+    toast.className = `${colors[type]} text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium animate-slide-in`;
+    toast.innerHTML = `<span class="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs">${icons[type]}</span> ${msg}`;
+    tc.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+// ─── MODAL ──────────────────────────────────────────────────
+function openModal(content) {
+    document.getElementById('modal-content').innerHTML = content;
+    document.getElementById('modal-container').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+function closeModal() {
+    document.getElementById('modal-container').classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+// ================================================================
+//  PAGE: DASHBOARD
+// ================================================================
+function renderDashboard() {
+    const k = APP_DATA.kpis;
+    const spendChange = (((k.thisMonthSpend - k.lastMonthSpend) / k.lastMonthSpend) * 100).toFixed(1);
+    const spendUp = spendChange > 0;
+    return `
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        ${kpiCard('Total Vendors', fmtNum(k.totalVendors), `${k.activeVendors} active`, 'blue',
+            `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>`)}
+        ${kpiCard('Purchase Orders', fmtNum(k.totalPOs), `${k.pendingPOs} pending`, 'purple',
+            `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`)}
+        ${kpiCard('Active Sites', k.activeSites, `of ${k.totalSites} total`, 'green',
+            `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>`)}
+        ${kpiCard('Inventory Value', fmt(k.totalInventoryValue), `${k.lowStockItems} low stock`, 'amber',
+            `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>`)}
+    </div>
+
+    <!-- Spend Banner -->
+    <div class="bg-gradient-to-r from-primary-600 to-primary-800 rounded-2xl p-5 mb-6 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+            <p class="text-primary-200 text-sm">This Month's Spend</p>
+            <p class="text-3xl font-bold mt-1">${fmt(k.thisMonthSpend)}</p>
+            <p class="text-sm mt-1 flex items-center gap-1">
+                <span class="${spendUp ? 'text-red-300' : 'text-green-300'}">${spendUp ? '↑' : '↓'} ${Math.abs(spendChange)}%</span>
+                <span class="text-primary-200">vs last month</span>
+            </p>
+        </div>
+        <div class="flex gap-3">
+            <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 text-center">
+                <p class="text-2xl font-bold">${k.pendingDeliveries}</p>
+                <p class="text-xs text-primary-200">Pending Deliveries</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur rounded-xl px-4 py-3 text-center">
+                <p class="text-2xl font-bold">${k.totalGRNs}</p>
+                <p class="text-xs text-primary-200">GRNs This Quarter</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <h3 class="text-sm font-semibold text-surface-700 mb-4">Purchase vs Receipt vs Consumption Trend</h3>
+            <div class="h-64"><canvas id="chart-purchase-trend"></canvas></div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <h3 class="text-sm font-semibold text-surface-700 mb-4">Category-wise Spend</h3>
+            <div class="h-64"><canvas id="chart-category-spend"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <h3 class="text-sm font-semibold text-surface-700 mb-4">Vendor Delivery Performance</h3>
+            <div class="h-52"><canvas id="chart-vendor-performance"></canvas></div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <h3 class="text-sm font-semibold text-surface-700 mb-4">Top Sites by Material Cost</h3>
+            <div class="h-52"><canvas id="chart-site-consumption"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Charts Row 3 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <h3 class="text-sm font-semibold text-surface-700 mb-4">Current Stock Levels</h3>
+            <div class="h-56"><canvas id="chart-stock-levels"></canvas></div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <h3 class="text-sm font-semibold text-surface-700 mb-4">Category Spend Comparison (Month)</h3>
+            <div class="h-56"><canvas id="chart-monthly-comparison"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+        <h3 class="text-sm font-semibold text-surface-700 mb-4">Recent Activity</h3>
+        <div class="space-y-3">
+            ${activityItem('GRN-2026-003 received from Raj Paint House', '15 of 25 items delivered', 'Mar 15', 'amber')}
+            ${activityItem('Material issued to Palm Beach Towers', '3 items for site maintenance', 'Mar 16', 'blue')}
+            ${activityItem('PO-2026-006 placed with Raj Paint House', '₹1,18,690 — Paints & Primer', 'Mar 10', 'green')}
+            ${activityItem('PO-2026-005 approved for Steel World Industries', '2000 Kg TMT Steel — ₹1,53,153', 'Mar 01', 'purple')}
+            ${activityItem('GRN-2026-002 fully received from Shree Cement', '700 items — 2 bags rejected', 'Jan 18', 'green')}
+        </div>
+    </div>`;
+}
+
+function kpiCard(title, value, sub, color, icon) {
+    const colorMap = {
+        blue: { bg: 'bg-blue-50', icon: 'text-blue-600', border: 'border-blue-100' },
+        green: { bg: 'bg-green-50', icon: 'text-green-600', border: 'border-green-100' },
+        purple: { bg: 'bg-purple-50', icon: 'text-purple-600', border: 'border-purple-100' },
+        amber: { bg: 'bg-amber-50', icon: 'text-amber-600', border: 'border-amber-100' },
+    };
+    const c = colorMap[color];
+    return `
+    <div class="bg-white rounded-2xl shadow-sm border ${c.border} p-4 hover:shadow-md transition-shadow iso-card">
+        <div class="flex items-start justify-between mb-3">
+            <div class="${c.bg} rounded-xl p-2.5 ${c.icon}">${icon}</div>
+        </div>
+        <p class="text-2xl font-bold text-surface-800">${value}</p>
+        <p class="text-xs text-surface-400 mt-0.5">${title}</p>
+        <p class="text-xs text-surface-500 mt-1">${sub}</p>
+    </div>`;
+}
+
+function activityItem(title, desc, date, color) {
+    const dotColor = { blue: 'bg-blue-500', green: 'bg-green-500', amber: 'bg-amber-500', purple: 'bg-purple-500', red: 'bg-red-500' };
+    return `
+    <div class="flex items-start gap-3 p-3 rounded-xl hover:bg-surface-50 transition">
+        <div class="mt-1 w-2.5 h-2.5 rounded-full ${dotColor[color]} flex-shrink-0"></div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-surface-700">${title}</p>
+            <p class="text-xs text-surface-400">${desc}</p>
+        </div>
+        <span class="text-xs text-surface-400 whitespace-nowrap">${date}</span>
+    </div>`;
+}
+
+// ================================================================
+//  PAGE: VENDORS
+// ================================================================
+function renderVendors() {
+    const vendors = APP_DATA.vendors;
+    return `
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+        <div class="flex items-center gap-2 flex-1 w-full sm:w-auto">
+            <div class="flex items-center bg-white border border-surface-200 rounded-xl px-3 py-2 flex-1 sm:max-w-xs">
+                <svg class="w-4 h-4 text-surface-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" id="vendor-search" placeholder="Search vendors..." class="bg-transparent text-sm outline-none w-full" oninput="filterVendorTable()">
+            </div>
+            <select class="bg-white border border-surface-200 rounded-xl px-3 py-2 text-sm" onchange="filterVendorTable()">
+                <option value="">All Categories</option>
+                <option>Housekeeping</option><option>Construction</option><option>Electrical</option>
+                <option>Plumbing</option><option>Paints</option><option>Security</option><option>Gardening</option>
+            </select>
+        </div>
+        <button onclick="openAddVendorModal()" class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Vendor
+        </button>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div class="bg-white rounded-xl border border-surface-100 p-4">
+            <p class="text-xs text-surface-400">Total Vendors</p>
+            <p class="text-xl font-bold text-surface-800 mt-1">500</p>
+        </div>
+        <div class="bg-white rounded-xl border border-surface-100 p-4">
+            <p class="text-xs text-surface-400">Active</p>
+            <p class="text-xl font-bold text-green-600 mt-1">342</p>
+        </div>
+        <div class="bg-white rounded-xl border border-surface-100 p-4">
+            <p class="text-xs text-surface-400">Top Category</p>
+            <p class="text-xl font-bold text-primary-600 mt-1">Construction</p>
+        </div>
+        <div class="bg-white rounded-xl border border-surface-100 p-4">
+            <p class="text-xs text-surface-400">Total Purchase Value</p>
+            <p class="text-xl font-bold text-surface-800 mt-1">${fmt(vendors.reduce((s,v) => s + v.totalValue, 0))}</p>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-surface-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm" id="vendors-table">
+                <thead>
+                    <tr class="bg-surface-50 border-b border-surface-100">
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Vendor</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden lg:table-cell">Contact</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Category</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">GSTIN</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Orders</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Value</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Rating</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Status</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-50">
+                    ${vendors.map(v => `
+                    <tr class="hover:bg-surface-50/50 transition">
+                        <td class="py-3 px-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center text-xs font-bold flex-shrink-0">${v.name.substring(0,2).toUpperCase()}</div>
+                                <div>
+                                    <p class="font-medium text-surface-800">${v.name}</p>
+                                    <p class="text-xs text-surface-400">${v.id}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="py-3 px-4 hidden lg:table-cell">
+                            <p class="text-surface-700">${v.contact}</p>
+                            <p class="text-xs text-surface-400">${v.phone}</p>
+                        </td>
+                        <td class="py-3 px-4"><span class="bg-surface-100 text-surface-600 px-2 py-0.5 rounded-md text-xs">${v.category}</span></td>
+                        <td class="py-3 px-4 text-xs text-surface-500 hidden md:table-cell font-mono">${v.gstin}</td>
+                        <td class="py-3 px-4 text-right font-medium hidden md:table-cell">${v.totalOrders}</td>
+                        <td class="py-3 px-4 text-right font-medium">${fmt(v.totalValue)}</td>
+                        <td class="py-3 px-4 text-center">${renderStars(v.rating)}</td>
+                        <td class="py-3 px-4 text-center">${statusBadge(v.status)}</td>
+                        <td class="py-3 px-4 text-center">
+                            <button onclick="viewVendorDetail('${v.id}')" class="text-primary-600 hover:text-primary-800 p-1" title="View">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            </button>
+                        </td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        <div class="px-4 py-3 border-t border-surface-100 flex items-center justify-between text-xs text-surface-400">
+            <span>Showing ${vendors.length} of 500 vendors</span>
+            <div class="flex gap-1">
+                <button class="px-3 py-1.5 rounded-lg bg-primary-600 text-white">1</button>
+                <button class="px-3 py-1.5 rounded-lg hover:bg-surface-100">2</button>
+                <button class="px-3 py-1.5 rounded-lg hover:bg-surface-100">3</button>
+                <span class="px-2 py-1.5">...</span>
+                <button class="px-3 py-1.5 rounded-lg hover:bg-surface-100">63</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderStars(rating) {
+    const full = Math.floor(rating);
+    const half = rating % 1 >= 0.5;
+    let stars = '';
+    for (let i = 0; i < 5; i++) {
+        if (i < full) stars += '<span class="text-amber-400">★</span>';
+        else if (i === full && half) stars += '<span class="text-amber-400">★</span>';
+        else stars += '<span class="text-surface-200">★</span>';
+    }
+    return `<div class="flex items-center justify-center gap-0.5 text-xs">${stars} <span class="text-surface-400 ml-1">${rating}</span></div>`;
+}
+
+function filterVendorTable() {
+    const search = document.getElementById('vendor-search')?.value?.toLowerCase() || '';
+    const rows = document.querySelectorAll('#vendors-table tbody tr');
+    rows.forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(search) ? '' : 'none';
+    });
+}
+
+function openAddVendorModal() {
+    openModal(`
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-semibold">Add New Vendor</h2>
+                <button onclick="closeModal()" class="text-surface-400 hover:text-surface-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                ${formField('Vendor Name', 'text', 'vendor-name', 'Enter vendor name')}
+                ${formField('Contact Person', 'text', 'vendor-contact', 'Contact person name')}
+                ${formField('Phone', 'tel', 'vendor-phone', '98XXXXXXXX')}
+                ${formField('Email', 'email', 'vendor-email', 'vendor@email.com')}
+                ${formField('GSTIN', 'text', 'vendor-gstin', '27XXXXX1234X1ZX')}
+                ${formField('PAN', 'text', 'vendor-pan', 'XXXXX1234X')}
+                ${formSelect('Category', 'vendor-category', ['Housekeeping','Construction','Electrical','Plumbing','Paints','Security','Gardening','Other'])}
+                ${formField('Bank Name', 'text', 'vendor-bank', 'Bank name')}
+                <div class="md:col-span-2">${formField('Address', 'text', 'vendor-address', 'Full address')}</div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-surface-100">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-xl border border-surface-200 text-sm font-medium hover:bg-surface-50 transition">Cancel</button>
+                <button onclick="closeModal();showToast('Vendor added successfully!')" class="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition">Save Vendor</button>
+            </div>
+        </div>
+    `);
+}
+
+function viewVendorDetail(vendorId) {
+    const v = APP_DATA.vendors.find(x => x.id === vendorId);
+    if (!v) return;
+    openModal(`
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center text-lg font-bold">${v.name.substring(0,2).toUpperCase()}</div>
+                    <div>
+                        <h2 class="text-lg font-semibold">${v.name}</h2>
+                        <p class="text-sm text-surface-400">${v.id} • ${v.category}</p>
+                    </div>
+                </div>
+                <button onclick="closeModal()" class="text-surface-400 hover:text-surface-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Contact</p><p class="font-medium text-sm mt-1">${v.contact}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Phone</p><p class="font-medium text-sm mt-1">${v.phone}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Email</p><p class="font-medium text-sm mt-1 break-all">${v.email}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">GSTIN</p><p class="font-medium text-sm mt-1 font-mono">${v.gstin}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">PAN</p><p class="font-medium text-sm mt-1 font-mono">${v.pan}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Rating</p><p class="font-medium text-sm mt-1">${renderStars(v.rating)}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Total Orders</p><p class="font-medium text-sm mt-1">${v.totalOrders}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Total Value</p><p class="font-medium text-sm mt-1">${fmt(v.totalValue)}</p></div>
+                <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Status</p><p class="mt-1">${statusBadge(v.status)}</p></div>
+            </div>
+            <div class="bg-surface-50 rounded-xl p-3 mb-4"><p class="text-xs text-surface-400">Address</p><p class="text-sm mt-1">${v.address}</p></div>
+            <div class="bg-surface-50 rounded-xl p-3"><p class="text-xs text-surface-400">Bank Details</p><p class="text-sm mt-1">${v.bankName} — ${v.bankBranch} | A/C: ${v.bankAc} | IFSC: ${v.bankIfsc}</p></div>
+        </div>
+    `);
+}
+
+// ================================================================
+//  PAGE: PURCHASE ORDERS
+// ================================================================
+function renderPurchaseOrders() {
+    const pos = APP_DATA.purchaseOrders;
+    return `
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+        <div class="flex items-center gap-2 flex-1 w-full sm:w-auto">
+            <div class="flex items-center bg-white border border-surface-200 rounded-xl px-3 py-2 flex-1 sm:max-w-xs">
+                <svg class="w-4 h-4 text-surface-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" placeholder="Search POs..." class="bg-transparent text-sm outline-none w-full">
+            </div>
+            <select class="bg-white border border-surface-200 rounded-xl px-3 py-2 text-sm">
+                <option value="">All Status</option>
+                <option>Draft</option><option>Approved</option><option>Partially Received</option><option>Fully Received</option>
+            </select>
+        </div>
+        <button onclick="openCreatePOModal()" class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Create PO
+        </button>
+    </div>
+
+    <!-- PO Summary -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+        <div class="bg-white rounded-xl border border-surface-100 p-3 text-center">
+            <p class="text-xl font-bold text-surface-800">${pos.length}</p><p class="text-xs text-surface-400">Total POs</p>
+        </div>
+        <div class="bg-amber-50 rounded-xl border border-amber-100 p-3 text-center">
+            <p class="text-xl font-bold text-amber-700">${pos.filter(p=>p.status==='draft').length}</p><p class="text-xs text-amber-600">Draft</p>
+        </div>
+        <div class="bg-blue-50 rounded-xl border border-blue-100 p-3 text-center">
+            <p class="text-xl font-bold text-blue-700">${pos.filter(p=>p.status==='approved').length}</p><p class="text-xs text-blue-600">Approved</p>
+        </div>
+        <div class="bg-orange-50 rounded-xl border border-orange-100 p-3 text-center">
+            <p class="text-xl font-bold text-orange-700">${pos.filter(p=>p.status==='partially-received').length}</p><p class="text-xs text-orange-600">Partial</p>
+        </div>
+        <div class="bg-green-50 rounded-xl border border-green-100 p-3 text-center">
+            <p class="text-xl font-bold text-green-700">${pos.filter(p=>p.status==='fully-received').length}</p><p class="text-xs text-green-600">Received</p>
+        </div>
+    </div>
+
+    <!-- PO Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-surface-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-surface-50 border-b border-surface-100">
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase">PO #</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Vendor</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Date</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden lg:table-cell">Quotation #</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Qty</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Amount</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Received</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Status</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-50">
+                    ${pos.map(po => {
+                        const pct = po.totalQty > 0 ? Math.round((po.receivedQty / po.totalQty) * 100) : 0;
+                        return `
+                    <tr class="hover:bg-surface-50/50 transition">
+                        <td class="py-3 px-4 font-medium text-primary-600">${po.id}</td>
+                        <td class="py-3 px-4">
+                            <p class="font-medium text-surface-800">${po.vendorName}</p>
+                            <p class="text-xs text-surface-400">${po.paymentTerms}</p>
+                        </td>
+                        <td class="py-3 px-4 text-surface-600 hidden md:table-cell">${formatDate(po.date)}</td>
+                        <td class="py-3 px-4 hidden lg:table-cell">#${po.quotationNo}</td>
+                        <td class="py-3 px-4 text-right hidden md:table-cell">${fmtNum(po.totalQty)}</td>
+                        <td class="py-3 px-4 text-right font-medium">${fmt(po.totalAmount)}</td>
+                        <td class="py-3 px-4 hidden md:table-cell">
+                            <div class="flex items-center gap-2">
+                                <div class="flex-1 bg-surface-100 rounded-full h-2 overflow-hidden"><div class="h-full rounded-full ${pct===100?'bg-green-500':pct>0?'bg-amber-500':'bg-surface-200'}" style="width:${pct}%"></div></div>
+                                <span class="text-xs text-surface-500 w-8">${pct}%</span>
+                            </div>
+                        </td>
+                        <td class="py-3 px-4 text-center">${statusBadge(po.status)}</td>
+                        <td class="py-3 px-4 text-center">
+                            <button onclick="viewPODetail('${po.id}')" class="text-primary-600 hover:text-primary-800 p-1" title="View Details">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            </button>
+                        </td>
+                    </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>`;
+}
+
+function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function viewPODetail(poId) {
+    const po = APP_DATA.purchaseOrders.find(x => x.id === poId);
+    if (!po) return;
+    const vendor = APP_DATA.vendors.find(v => v.id === po.vendorId);
+    openModal(`
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-semibold">${po.id}</h2>
+                    <p class="text-sm text-surface-400">Quotation #${po.quotationNo} • ${formatDate(po.date)}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    ${statusBadge(po.status)}
+                    <button onclick="closeModal()" class="text-surface-400 hover:text-surface-600 ml-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                </div>
+            </div>
+
+            <!-- Vendor Info -->
+            <div class="bg-surface-50 rounded-xl p-4 mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div><p class="text-xs text-surface-400">Vendor</p><p class="text-sm font-medium">${po.vendorName}</p></div>
+                <div><p class="text-xs text-surface-400">Payment</p><p class="text-sm font-medium">${po.paymentTerms}</p></div>
+                <div><p class="text-xs text-surface-400">Delivery Date</p><p class="text-sm font-medium">${formatDate(po.deliveryDate)}</p></div>
+                <div><p class="text-xs text-surface-400">GSTIN</p><p class="text-sm font-medium font-mono">${vendor?.gstin || 'N/A'}</p></div>
+            </div>
+
+            <!-- Items Table (matching quotation format) -->
+            <div class="overflow-x-auto mb-4">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="bg-surface-100">
+                            <th class="py-2 px-2 text-left">S.N.</th>
+                            <th class="py-2 px-2 text-left">Description of Goods</th>
+                            <th class="py-2 px-2 text-left">HSN/SAC</th>
+                            <th class="py-2 px-2 text-right">Qty</th>
+                            <th class="py-2 px-2">Unit</th>
+                            <th class="py-2 px-2 text-right">Rate</th>
+                            <th class="py-2 px-2 text-right">Disc%</th>
+                            <th class="py-2 px-2 text-right">CGST%</th>
+                            <th class="py-2 px-2 text-right">SGST%</th>
+                            <th class="py-2 px-2 text-right">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-surface-50">
+                        ${po.items.map((item, i) => {
+                            const base = item.qty * item.rate * (1 - item.disc/100);
+                            const cgst = base * item.cgstRate/100;
+                            const sgst = base * item.sgstRate/100;
+                            const total = base + cgst + sgst;
+                            return `
+                            <tr class="hover:bg-surface-50">
+                                <td class="py-2 px-2">${i+1}</td>
+                                <td class="py-2 px-2 font-medium">${item.name}</td>
+                                <td class="py-2 px-2 font-mono">${item.hsn}</td>
+                                <td class="py-2 px-2 text-right">${item.qty}</td>
+                                <td class="py-2 px-2">${item.unit}</td>
+                                <td class="py-2 px-2 text-right">${fmt(item.rate)}</td>
+                                <td class="py-2 px-2 text-right">${item.disc}%</td>
+                                <td class="py-2 px-2 text-right">${item.cgstRate}%</td>
+                                <td class="py-2 px-2 text-right">${item.sgstRate}%</td>
+                                <td class="py-2 px-2 text-right font-medium">${fmt(total.toFixed(2))}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr class="bg-surface-100 font-semibold">
+                            <td colspan="3" class="py-2 px-2">Grand Total</td>
+                            <td class="py-2 px-2 text-right">${fmtNum(po.totalQty)}</td>
+                            <td colspan="5"></td>
+                            <td class="py-2 px-2 text-right">${fmt(po.totalAmount)}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- Receipt Progress -->
+            <div class="bg-surface-50 rounded-xl p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-sm font-medium">Receipt Progress</p>
+                    <p class="text-sm font-bold">${po.receivedQty} / ${po.totalQty}</p>
+                </div>
+                <div class="w-full bg-surface-200 rounded-full h-3 overflow-hidden">
+                    <div class="h-full rounded-full ${po.receivedQty >= po.totalQty ? 'bg-green-500' : 'bg-primary-500'} transition-all" style="width:${Math.min(100, Math.round(po.receivedQty/po.totalQty*100))}%"></div>
+                </div>
+            </div>
+        </div>
+    `);
+}
+
+function openCreatePOModal() {
+    openModal(`
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-semibold">Create Purchase Order</h2>
+                <button onclick="closeModal()" class="text-surface-400 hover:text-surface-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                ${formSelect('Vendor', 'po-vendor', APP_DATA.vendors.filter(v=>v.status==='active').map(v=>v.name))}
+                ${formField('Quotation No', 'text', 'po-quotation', 'Enter quotation number')}
+                ${formField('PO Date', 'date', 'po-date', '')}
+                ${formField('Expected Delivery', 'date', 'po-delivery', '')}
+                ${formSelect('Payment Terms', 'po-payment', ['Cash','Net 15','Net 30','Net 45','Net 60'])}
+            </div>
+            <h3 class="text-sm font-semibold mb-3">Line Items</h3>
+            <div class="overflow-x-auto mb-4">
+                <table class="w-full text-sm">
+                    <thead><tr class="bg-surface-50"><th class="py-2 px-2 text-left text-xs">Item</th><th class="py-2 px-2 text-xs">HSN</th><th class="py-2 px-2 text-xs">Qty</th><th class="py-2 px-2 text-xs">Unit</th><th class="py-2 px-2 text-xs">Rate</th><th class="py-2 px-2 text-xs">CGST%</th><th class="py-2 px-2 text-xs">SGST%</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td class="py-2 px-2"><select class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-full">${APP_DATA.items.map(i=>`<option>${i.name}</option>`).join('')}</select></td>
+                            <td class="py-2 px-2"><input class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-20" value="340290"></td>
+                            <td class="py-2 px-2"><input type="number" class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-16" value="1"></td>
+                            <td class="py-2 px-2"><input class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-14" value="Pcs"></td>
+                            <td class="py-2 px-2"><input type="number" class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-20" value="650"></td>
+                            <td class="py-2 px-2"><input type="number" class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-14" value="9"></td>
+                            <td class="py-2 px-2"><input type="number" class="border border-surface-200 rounded-lg px-2 py-1 text-sm w-14" value="9"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <button class="text-primary-600 text-sm font-medium hover:text-primary-800">+ Add Another Item</button>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-surface-100">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-xl border border-surface-200 text-sm font-medium hover:bg-surface-50 transition">Cancel</button>
+                <button onclick="closeModal();showToast('PO saved as draft')" class="px-4 py-2 rounded-xl border border-primary-200 text-primary-600 text-sm font-medium hover:bg-primary-50 transition">Save Draft</button>
+                <button onclick="closeModal();showToast('Purchase Order created!')" class="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition">Create PO</button>
+            </div>
+        </div>
+    `);
+}
+
+// ================================================================
+//  PAGE: GOODS RECEIPT
+// ================================================================
+function renderGoodsReceipt() {
+    const grns = APP_DATA.goodsReceipts;
+    return `
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+        <p class="text-sm text-surface-500">${grns.length} goods receipts recorded</p>
+        <button onclick="openCreateGRNModal()" class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Record GRN
+        </button>
+    </div>
+
+    <div class="space-y-4">
+        ${grns.map(grn => {
+            const pct = Math.round(grn.totalReceived / grn.totalOrdered * 100);
+            return `
+            <div class="bg-white rounded-2xl shadow-sm border border-surface-100 overflow-hidden">
+                <div class="p-5">
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-semibold text-surface-800">${grn.id}</h3>
+                                <span class="text-xs bg-surface-100 text-surface-500 px-2 py-0.5 rounded-md">→ ${grn.poId}</span>
+                            </div>
+                            <p class="text-sm text-surface-400 mt-1">${grn.vendorName} • ${formatDate(grn.date)}</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            ${statusBadge(grn.qualityStatus === 'Partial Delivery' ? 'partially-received' : 'fully-received')}
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="flex-1 bg-surface-100 rounded-full h-3 overflow-hidden">
+                            <div class="h-full rounded-full ${pct >= 100 ? 'bg-green-500' : 'bg-amber-500'}" style="width:${pct}%"></div>
+                        </div>
+                        <span class="text-sm font-medium text-surface-600">${grn.totalReceived}/${grn.totalOrdered} (${pct}%)</span>
+                    </div>
+
+                    <!-- Items -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead><tr class="bg-surface-50 text-surface-500">
+                                <th class="py-2 px-3 text-left">Item</th>
+                                <th class="py-2 px-3 text-right">Ordered</th>
+                                <th class="py-2 px-3 text-right">Received</th>
+                                <th class="py-2 px-3 text-right">Accepted</th>
+                                <th class="py-2 px-3 text-right">Rejected</th>
+                                <th class="py-2 px-3 text-center">Status</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-surface-50">
+                                ${grn.items.map(item => `
+                                <tr class="hover:bg-surface-50">
+                                    <td class="py-2 px-3 font-medium">${item.name}</td>
+                                    <td class="py-2 px-3 text-right">${item.orderedQty}</td>
+                                    <td class="py-2 px-3 text-right font-medium ${item.receivedQty < item.orderedQty ? 'text-amber-600' : 'text-green-600'}">${item.receivedQty}</td>
+                                    <td class="py-2 px-3 text-right text-green-600">${item.acceptedQty}</td>
+                                    <td class="py-2 px-3 text-right ${item.rejectedQty > 0 ? 'text-red-600 font-medium' : ''}">${item.rejectedQty}</td>
+                                    <td class="py-2 px-3 text-center">
+                                        ${item.receivedQty === 0 ? '<span class="text-red-500">Pending</span>' :
+                                          item.receivedQty < item.orderedQty ? '<span class="text-amber-500">Partial</span>' :
+                                          '<span class="text-green-500">Complete</span>'}
+                                    </td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-3 flex items-start gap-2">
+                        <p class="text-xs text-surface-400"><span class="font-medium">Received by:</span> ${grn.receivedBy}</p>
+                    </div>
+                    ${grn.remarks ? `<div class="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-2.5"><p class="text-xs text-amber-700"><strong>Remarks:</strong> ${grn.remarks}</p></div>` : ''}
+                </div>
+            </div>`;
+        }).join('')}
+    </div>`;
+}
+
+function openCreateGRNModal() {
+    const pendingPOs = APP_DATA.purchaseOrders.filter(p => p.status === 'approved' || p.status === 'partially-received');
+    openModal(`
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-semibold">Record Goods Receipt</h2>
+                <button onclick="closeModal()" class="text-surface-400 hover:text-surface-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                ${formSelect('Purchase Order', 'grn-po', pendingPOs.map(p => `${p.id} — ${p.vendorName}`))}
+                ${formField('Receipt Date', 'date', 'grn-date', '')}
+                ${formField('Received By', 'text', 'grn-received-by', 'Name of receiver')}
+                ${formSelect('Quality Status', 'grn-quality', ['Accepted','Accepted with remarks','Rejected','Partial Delivery'])}
+            </div>
+            <div class="mb-4">${formField('Remarks', 'text', 'grn-remarks', 'Any notes about this delivery')}</div>
+            <p class="text-xs text-surface-400 mb-3">Select a PO above to load items and enter received quantities.</p>
+            <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-surface-100">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-xl border border-surface-200 text-sm font-medium hover:bg-surface-50 transition">Cancel</button>
+                <button onclick="closeModal();showToast('Goods Receipt recorded!')" class="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition">Save GRN</button>
+            </div>
+        </div>
+    `);
+}
+
+// ================================================================
+//  PAGE: INVENTORY
+// ================================================================
+function renderInventory() {
+    const inv = APP_DATA.inventory;
+    const inStock = inv.filter(i => i.inStock > 0);
+    const outOfStock = inv.filter(i => i.inStock === 0);
+    return `
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div class="bg-white rounded-xl border border-surface-100 p-4">
+            <p class="text-xs text-surface-400">Total Items</p><p class="text-xl font-bold">${inv.length}</p>
+        </div>
+        <div class="bg-green-50 rounded-xl border border-green-100 p-4">
+            <p class="text-xs text-green-600">In Stock</p><p class="text-xl font-bold text-green-700">${inStock.length}</p>
+        </div>
+        <div class="bg-red-50 rounded-xl border border-red-100 p-4">
+            <p class="text-xs text-red-600">Out of Stock</p><p class="text-xl font-bold text-red-700">${outOfStock.length}</p>
+        </div>
+        <div class="bg-amber-50 rounded-xl border border-amber-100 p-4">
+            <p class="text-xs text-amber-600">Reserved</p><p class="text-xl font-bold text-amber-700">${inv.filter(i=>i.reserved>0).length}</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-surface-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-surface-50 border-b border-surface-100">
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Item</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Category</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase">In Stock</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Reserved</th>
+                        <th class="text-right py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden lg:table-cell">Available</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden lg:table-cell">Unit</th>
+                        <th class="text-left py-3 px-4 font-semibold text-surface-600 text-xs uppercase hidden md:table-cell">Location</th>
+                        <th class="text-center py-3 px-4 font-semibold text-surface-600 text-xs uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-50">
+                    ${inv.map(item => {
+                        const avail = item.inStock - item.reserved;
+                        const status = item.inStock === 0 ? 'out' : avail <= 5 ? 'low' : 'ok';
+                        const statusHtml = status === 'out' ? '<span class="bg-red-50 text-red-600 px-2 py-0.5 rounded-full text-xs font-medium">Out of Stock</span>'
+                            : status === 'low' ? '<span class="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full text-xs font-medium">Low Stock</span>'
+                            : '<span class="bg-green-50 text-green-600 px-2 py-0.5 rounded-full text-xs font-medium">Available</span>';
+                        return `
+                    <tr class="hover:bg-surface-50/50 transition">
+                        <td class="py-3 px-4">
+                            <p class="font-medium text-surface-800">${item.name}</p>
+                            <p class="text-xs text-surface-400">${item.itemId}</p>
+                        </td>
+                        <td class="py-3 px-4 hidden md:table-cell"><span class="bg-surface-100 text-surface-600 px-2 py-0.5 rounded-md text-xs">${item.category}</span></td>
+                        <td class="py-3 px-4 text-right font-bold ${item.inStock === 0 ? 'text-red-500' : ''}">${item.inStock}</td>
+                        <td class="py-3 px-4 text-right hidden md:table-cell ${item.reserved > 0 ? 'text-amber-600 font-medium' : ''}">${item.reserved}</td>
+                        <td class="py-3 px-4 text-right font-medium hidden lg:table-cell">${avail}</td>
+                        <td class="py-3 px-4 hidden lg:table-cell text-surface-500">${item.unit}</td>
+                        <td class="py-3 px-4 hidden md:table-cell text-surface-500">${item.location}</td>
+                        <td class="py-3 px-4 text-center">${statusHtml}</td>
+                    </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>`;
+}
+
+// ================================================================
+//  PAGE: SITES
+// ================================================================
+function renderSites() {
+    const sites = APP_DATA.sites;
+    return `
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+        <p class="text-sm text-surface-500">${sites.length} sites • ${sites.filter(s=>s.status==='active').length} active</p>
+        <button onclick="showToast('Add Site form coming soon','info')" class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Site
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        ${sites.map(site => `
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5 hover:shadow-md transition iso-card">
+            <div class="flex items-start justify-between mb-3">
+                <div class="w-10 h-10 rounded-xl ${site.status === 'active' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'} flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+                </div>
+                ${statusBadge(site.status)}
+            </div>
+            <h3 class="font-semibold text-surface-800 mb-1">${site.name}</h3>
+            <p class="text-xs text-surface-400 mb-3">${site.location}</p>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+                <div class="bg-surface-50 rounded-lg p-2">
+                    <p class="text-xs text-surface-400">Manager</p>
+                    <p class="text-sm font-medium">${site.manager}</p>
+                </div>
+                <div class="bg-surface-50 rounded-lg p-2">
+                    <p class="text-xs text-surface-400">Phone</p>
+                    <p class="text-sm font-medium">${site.phone}</p>
+                </div>
+                <div class="bg-surface-50 rounded-lg p-2">
+                    <p class="text-xs text-surface-400">Items Issued</p>
+                    <p class="text-sm font-medium">${fmtNum(site.itemsIssued)}</p>
+                </div>
+                <div class="bg-surface-50 rounded-lg p-2">
+                    <p class="text-xs text-surface-400">Material Cost</p>
+                    <p class="text-sm font-medium">${fmt(site.totalMaterialCost)}</p>
+                </div>
+            </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+// ================================================================
+//  PAGE: MATERIAL ISSUE
+// ================================================================
+function renderMaterialIssue() {
+    const issues = APP_DATA.materialIssues;
+    return `
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+        <p class="text-sm text-surface-500">${issues.length} material issues</p>
+        <button onclick="openIssueMaterialModal()" class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Issue Material
+        </button>
+    </div>
+
+    <div class="space-y-4">
+        ${issues.map(mi => `
+        <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-semibold text-surface-800">${mi.id}</h3>
+                        ${statusBadge(mi.status)}
+                    </div>
+                    <p class="text-sm text-surface-400 mt-1">${mi.siteName} • ${formatDate(mi.date)}</p>
+                </div>
+                <div class="text-right text-xs text-surface-400">
+                    <p>Issued by: ${mi.issuedBy}</p>
+                    <p>Requested by: ${mi.requestedBy}</p>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead><tr class="bg-surface-50 text-xs text-surface-500">
+                        <th class="py-2 px-3 text-left">Item</th>
+                        <th class="py-2 px-3 text-right">Qty</th>
+                        <th class="py-2 px-3 text-left">Unit</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-surface-50">
+                        ${mi.items.map(item => `
+                        <tr>
+                            <td class="py-2 px-3 font-medium">${item.name}</td>
+                            <td class="py-2 px-3 text-right">${item.qty}</td>
+                            <td class="py-2 px-3 text-surface-500">${item.unit}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function openIssueMaterialModal() {
+    openModal(`
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-semibold">Issue Material to Site</h2>
+                <button onclick="closeModal()" class="text-surface-400 hover:text-surface-600"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                ${formSelect('Site', 'mi-site', APP_DATA.sites.filter(s=>s.status==='active').map(s=>s.name))}
+                ${formField('Issue Date', 'date', 'mi-date', '')}
+                ${formField('Requested By', 'text', 'mi-requested', 'Site manager name')}
+                ${formField('Issued By', 'text', 'mi-issued', 'Store keeper name')}
+            </div>
+            <h3 class="text-sm font-semibold mb-3">Items</h3>
+            <div class="space-y-2 mb-4">
+                <div class="grid grid-cols-12 gap-2">
+                    <div class="col-span-6"><select class="w-full border border-surface-200 rounded-lg px-2 py-1.5 text-sm">${APP_DATA.inventory.filter(i=>i.inStock>0).map(i=>`<option>${i.name} (${i.inStock} avail)</option>`).join('')}</select></div>
+                    <div class="col-span-3"><input type="number" placeholder="Qty" class="w-full border border-surface-200 rounded-lg px-2 py-1.5 text-sm"></div>
+                    <div class="col-span-3"><input placeholder="Unit" value="Pcs" class="w-full border border-surface-200 rounded-lg px-2 py-1.5 text-sm"></div>
+                </div>
+            </div>
+            <button class="text-primary-600 text-sm font-medium hover:text-primary-800">+ Add Another Item</button>
+            <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-surface-100">
+                <button onclick="closeModal()" class="px-4 py-2 rounded-xl border border-surface-200 text-sm font-medium hover:bg-surface-50 transition">Cancel</button>
+                <button onclick="closeModal();showToast('Material issued successfully!')" class="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition">Issue Material</button>
+            </div>
+        </div>
+    `);
+}
+
+// ================================================================
+//  PAGE: REPORTS
+// ================================================================
+function renderReports() {
+    return `
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        ${reportCard('PO vs GRN Reconciliation', 'Compare ordered quantities with received quantities across all POs', 'blue',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>')}
+        ${reportCard('Vendor-wise Purchase Summary', 'Total purchases, pending amounts, and performance per vendor', 'purple',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/></svg>')}
+        ${reportCard('Site-wise Consumption', 'Material consumed per site with cost breakdown', 'green',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>')}
+        ${reportCard('Stock Aging Report', 'Items in stock for extended periods — avoid dead stock', 'amber',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>')}
+        ${reportCard('GST Report (CGST + SGST)', 'Tax details for all purchases grouped by HSN code — ready for filing', 'red',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2v16z"/></svg>')}
+        ${reportCard('Monthly Spend Analysis', 'Month-over-month comparison with category and vendor breakdowns', 'cyan',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>')}
+        ${reportCard('Pending Deliveries', 'All POs with outstanding quantities yet to be delivered', 'orange',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>')}
+        ${reportCard('Quality Rejection Report', 'Track rejected items across GRNs — identify patterns', 'rose',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>')}
+        ${reportCard('Inventory Valuation', 'Current stock value at purchase price — total asset report', 'teal',
+            '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>')}
+    </div>
+
+    <!-- Sample Report Preview: PO vs GRN -->
+    <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+        <h3 class="text-sm font-semibold text-surface-700 mb-4">PO vs GRN Reconciliation (Quick View)</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead><tr class="bg-surface-50 border-b border-surface-100">
+                    <th class="py-2 px-3 text-left text-xs font-semibold text-surface-600">PO #</th>
+                    <th class="py-2 px-3 text-left text-xs font-semibold text-surface-600">Vendor</th>
+                    <th class="py-2 px-3 text-right text-xs font-semibold text-surface-600">Ordered</th>
+                    <th class="py-2 px-3 text-right text-xs font-semibold text-surface-600">Received</th>
+                    <th class="py-2 px-3 text-right text-xs font-semibold text-surface-600">Shortfall</th>
+                    <th class="py-2 px-3 text-right text-xs font-semibold text-surface-600">%</th>
+                    <th class="py-2 px-3 text-center text-xs font-semibold text-surface-600">Status</th>
+                </tr></thead>
+                <tbody class="divide-y divide-surface-50">
+                    ${APP_DATA.purchaseOrders.map(po => {
+                        const shortfall = po.totalQty - po.receivedQty;
+                        const pct = Math.round(po.receivedQty / po.totalQty * 100);
+                        return `<tr class="hover:bg-surface-50">
+                            <td class="py-2 px-3 font-medium text-primary-600">${po.id}</td>
+                            <td class="py-2 px-3">${po.vendorName}</td>
+                            <td class="py-2 px-3 text-right">${fmtNum(po.totalQty)}</td>
+                            <td class="py-2 px-3 text-right font-medium">${fmtNum(po.receivedQty)}</td>
+                            <td class="py-2 px-3 text-right ${shortfall > 0 ? 'text-red-600 font-medium':''}">${shortfall > 0 ? fmtNum(shortfall) : '—'}</td>
+                            <td class="py-2 px-3 text-right">${pct}%</td>
+                            <td class="py-2 px-3 text-center">${statusBadge(po.status)}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>`;
+}
+
+function reportCard(title, desc, color, icon) {
+    const colorMap = {
+        blue: 'bg-blue-50 text-blue-600 border-blue-100',
+        purple: 'bg-purple-50 text-purple-600 border-purple-100',
+        green: 'bg-green-50 text-green-600 border-green-100',
+        amber: 'bg-amber-50 text-amber-600 border-amber-100',
+        red: 'bg-red-50 text-red-600 border-red-100',
+        cyan: 'bg-cyan-50 text-cyan-600 border-cyan-100',
+        orange: 'bg-orange-50 text-orange-600 border-orange-100',
+        rose: 'bg-rose-50 text-rose-600 border-rose-100',
+        teal: 'bg-teal-50 text-teal-600 border-teal-100',
+    };
+    return `
+    <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5 hover:shadow-md transition cursor-pointer iso-card" onclick="showToast('Opening ${title}...','info')">
+        <div class="w-10 h-10 rounded-xl ${colorMap[color]} flex items-center justify-center mb-3">${icon}</div>
+        <h4 class="font-semibold text-surface-800 text-sm mb-1">${title}</h4>
+        <p class="text-xs text-surface-400 leading-relaxed">${desc}</p>
+    </div>`;
+}
+
+// ================================================================
+//  PAGE: SETTINGS
+// ================================================================
+function renderSettings() {
+    return `
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- User Management -->
+        <div class="lg:col-span-2">
+            <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+                <h3 class="font-semibold text-surface-800 mb-4">User Management</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead><tr class="bg-surface-50 border-b border-surface-100">
+                            <th class="py-2 px-3 text-left text-xs font-semibold text-surface-600">User</th>
+                            <th class="py-2 px-3 text-left text-xs font-semibold text-surface-600">Role</th>
+                            <th class="py-2 px-3 text-left text-xs font-semibold text-surface-600">Email</th>
+                            <th class="py-2 px-3 text-center text-xs font-semibold text-surface-600">Status</th>
+                        </tr></thead>
+                        <tbody class="divide-y divide-surface-50">
+                            ${[
+                                { name: 'Admin User', role: 'Admin', email: 'admin@goodsflow.in', status: 'active' },
+                                { name: 'Rajesh Patil', role: 'Site Manager', email: 'rajesh@goodsflow.in', status: 'active' },
+                                { name: 'Ramesh Kumar', role: 'Store Keeper', email: 'ramesh@goodsflow.in', status: 'active' },
+                                { name: 'Sunil Jadhav', role: 'Store Keeper', email: 'sunil@goodsflow.in', status: 'active' },
+                                { name: 'Priya Sharma', role: 'Accountant', email: 'priya@goodsflow.in', status: 'active' },
+                            ].map(u => `
+                            <tr class="hover:bg-surface-50">
+                                <td class="py-3 px-3">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-8 h-8 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center text-xs font-bold">${u.name.split(' ').map(w=>w[0]).join('')}</div>
+                                        <span class="font-medium">${u.name}</span>
+                                    </div>
+                                </td>
+                                <td class="py-3 px-3"><span class="bg-surface-100 text-surface-600 px-2 py-0.5 rounded-md text-xs">${u.role}</span></td>
+                                <td class="py-3 px-3 text-surface-500">${u.email}</td>
+                                <td class="py-3 px-3 text-center">${statusBadge(u.status)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Roles & Quick Settings -->
+        <div class="space-y-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+                <h3 class="font-semibold text-surface-800 mb-4">Roles & Permissions</h3>
+                <div class="space-y-3">
+                    ${['Admin', 'Site Manager', 'Store Keeper', 'Accountant'].map((role, i) => {
+                        const perms = [
+                            'Full access to all modules',
+                            'View sites, request material, view reports',
+                            'Manage GRN, inventory, issue material',
+                            'View POs, reports, vendor payments'
+                        ];
+                        const colors = ['bg-red-50 text-red-600', 'bg-blue-50 text-blue-600', 'bg-green-50 text-green-600', 'bg-purple-50 text-purple-600'];
+                        return `
+                        <div class="flex items-start gap-3 p-3 bg-surface-50 rounded-xl">
+                            <span class="${colors[i]} px-2 py-0.5 rounded-md text-xs font-medium">${role}</span>
+                            <p class="text-xs text-surface-500">${perms[i]}</p>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-surface-100 p-5">
+                <h3 class="font-semibold text-surface-800 mb-4">Company Info</h3>
+                <div class="space-y-3">
+                    <div><p class="text-xs text-surface-400">Company Name</p><p class="text-sm font-medium">Your Company Pvt. Ltd.</p></div>
+                    <div><p class="text-xs text-surface-400">GSTIN</p><p class="text-sm font-medium font-mono">27XXXXXXXXX1Z5</p></div>
+                    <div><p class="text-xs text-surface-400">Default Warehouse</p><p class="text-sm font-medium">Main Warehouse, Navi Mumbai</p></div>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+// ─── FORM HELPERS ────────────────────────────────────────────
+function formField(label, type, id, placeholder) {
+    return `<div>
+        <label class="block text-xs font-medium text-surface-600 mb-1.5">${label}</label>
+        <input type="${type}" id="${id}" placeholder="${placeholder}" class="w-full border border-surface-200 rounded-xl px-3 py-2 text-sm focus:border-primary-400 focus:ring-2 focus:ring-primary-100 outline-none transition">
+    </div>`;
+}
+
+function formSelect(label, id, options) {
+    return `<div>
+        <label class="block text-xs font-medium text-surface-600 mb-1.5">${label}</label>
+        <select id="${id}" class="w-full border border-surface-200 rounded-xl px-3 py-2 text-sm focus:border-primary-400 focus:ring-2 focus:ring-primary-100 outline-none transition">
+            <option value="">Select ${label}</option>
+            ${options.map(o => `<option value="${o}">${o}</option>`).join('')}
+        </select>
+    </div>`;
+}

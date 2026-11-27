@@ -1,0 +1,52 @@
+{
+  "nav": {
+    "superAdmin": {
+      "superAdmin": "منصة SaaS",
+      "tenants": "المستأجرون ولوحات الألوان",
+      "reports": "تحليلات المنصة",
+      "security": "الأمان الشامل و 2FA"
+    },
+    "dashboards": {
+      "dashboards": "لوحات التحكم",
+      "home": "لوحة الإدارة التنفيذية",
+      "reports": "التقارير وسجل الضرائب"
+    },
+    "masters": {
+      "masters": "البيانات الرئيسية",
+      "items": "الأصناف والمواد",
+      "sites": "مواقع المشاريع",
+      "vendors": "الموردون والمقاولون"
+    },
+    "procurement": {
+      "procurement": "المشتريات",
+      "indents": "طلبات الموقع",
+      "rfq": "عروض الأسعار والمناقصات",
+      "pos": "أوامر الشراء"
+    },
+    "inventory": {
+      "inventory": "المخزون والمستودعات",
+      "stock": "المخزون والتقييم",
+      "grn": "إدخال المستودع (GRN)",
+      "issues": "صرف مواد الموقع",
+      "ledger": "سجل حركة المخزون",
+      "boqConsumption": "الاستهلاك مقابل جدول الكميات"
+    },
+    "contractors": {
+      "contractors": "المقاولون والفواتير",
+      "workOrders": "أوامر العمل (BOQ)",
+      "raBills": "فواتير المقاولين ومستخلصات القياس"
+    },
+    "siteOperations": {
+      "siteOperations": "عمليات الموقع",
+      "dpr": "تقرير الإنجاز اليومي (DPR)",
+      "labour": "حضور العمالة"
+    },
+    "settings": {
+      "settings": "الإعدادات",
+      "general": "عام",
+      "appearance": "المظهر",
+      "security": "الأمان و 2FA",
+      "tenants": "المستأجرون ولوحات الألوان"
+    }
+  }
+}

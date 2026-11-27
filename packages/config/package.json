@@ -1,0 +1,17 @@
+{
+  "name": "@builderp/config",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "tsconfig",
+    "eslint",
+    "prettier"
+  ],
+  "exports": {
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/nestjs.json": "./tsconfig/nestjs.json",
+    "./tsconfig/react.json": "./tsconfig/react.json",
+    "./eslint/base": "./eslint/base.js",
+    "./prettier": "./prettier/index.js"
+  }
+}

@@ -1,0 +1,10 @@
+<svg viewBox="0 0 100 80" xmlns="http://www.w3.org/2000/svg">
+  <path d="M50 8 L15 35 L5 25 L50 2 L95 25 L85 35 Z" fill="#c5a04e" stroke="#c5a04e" stroke-width="1"/>
+  <path d="M5 25 L15 35 L25 30 L50 45 L75 30 L85 35 L95 25 L50 2 Z" fill="#d4b065" stroke="#b8963f" stroke-width="0.5"/>
+  <circle cx="50" cy="5" r="4" fill="#c5a04e" stroke="#b8963f" stroke-width="0.5"/>
+  <circle cx="15" cy="35" r="3.5" fill="#c5a04e" stroke="#b8963f" stroke-width="0.5"/>
+  <circle cx="85" cy="35" r="3.5" fill="#c5a04e" stroke="#b8963f" stroke-width="0.5"/>
+  <text x="50" y="62" text-anchor="middle" font-family="serif" font-weight="bold" font-size="16" fill="#dc2626">KINGS</text>
+  <line x1="8" y1="67" x2="92" y2="67" stroke="#334155" stroke-width="1.5"/>
+  <text x="50" y="77" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="6.5" fill="#334155" letter-spacing="1">BUILDERS &amp; DEVELOPERS</text>
+</svg>

@@ -1,0 +1,52 @@
+{
+  "nav": {
+    "superAdmin": {
+      "superAdmin": "SaaS Platform",
+      "tenants": "Tenants & Palettes",
+      "reports": "Platform Analytics",
+      "security": "Global Security & 2FA"
+    },
+    "dashboards": {
+      "dashboards": "Dashboards",
+      "home": "Executive Dashboard",
+      "reports": "Reports & TDS Register"
+    },
+    "masters": {
+      "masters": "Masters Data",
+      "items": "Items & Materials",
+      "sites": "Project Sites",
+      "vendors": "Suppliers & Vendors"
+    },
+    "procurement": {
+      "procurement": "Procurement",
+      "indents": "Site Indents",
+      "rfq": "RFQ & Quotations",
+      "pos": "Purchase Orders"
+    },
+    "inventory": {
+      "inventory": "Inventory & Stores",
+      "stock": "Stock & Valuation",
+      "grn": "Store Inward (GRN)",
+      "issues": "Site Material Issues",
+      "ledger": "Stock Ledger",
+      "boqConsumption": "BOQ vs Actual"
+    },
+    "contractors": {
+      "contractors": "Contractors & Billing",
+      "workOrders": "Work Orders (BOQ)",
+      "raBills": "RA Bills & MB Sheets"
+    },
+    "siteOperations": {
+      "siteOperations": "Site Operations",
+      "dpr": "Daily Progress Report (DPR)",
+      "labour": "Labour Attendance"
+    },
+    "settings": {
+      "settings": "Settings",
+      "general": "General",
+      "appearance": "Appearance",
+      "security": "Security & 2FA",
+      "tenants": "Tenants & Palettes"
+    }
+  }
+}
