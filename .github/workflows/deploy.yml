@@ -1,0 +1,93 @@
+name: Build, Test & Deploy to Lightsail
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build Artifacts & Deploy to dazclothess.com
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @builderp/shared
+        run: pnpm --filter @builderp/shared build
+
+      - name: Typecheck, test & build @builderp/api
+        run: |
+          pnpm --filter @builderp/api test
+          cd apps/api
+          rm -rf dist
+          pnpm exec tsc -p tsconfig.json
+
+      - name: Typecheck & build @builderp/web
+        env:
+          VITE_API_URL: https://dazclothess.com
+          VITE_SHOW_DEMO_LOGINS: "false"
+        run: |
+          cd apps/web
+          pnpm exec tsc -b
+          pnpm exec vite build
+
+      - name: Package build-only runtime bundle
+        run: |
+          tar -czf /tmp/builderp-bundle.tar.gz \
+            package.json \
+            pnpm-workspace.yaml \
+            pnpm-lock.yaml \
+            packages/config/package.json \
+            packages/shared/package.json \
+            packages/shared/dist \
+            apps/api/package.json \
+            apps/api/dist \
+            apps/web/package.json \
+            apps/web/dist
+
+      - name: Deploy build bundle to Lightsail
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER: ${{ secrets.LIGHTSAIL_USER }}
+          PORT: ${{ secrets.LIGHTSAIL_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${PORT:-22}" -H "$HOST" >> ~/.ssh/known_hosts
+
+          scp -i ~/.ssh/deploy_key -P "${PORT:-22}" /tmp/builderp-bundle.tar.gz "${USER}@${HOST}:/tmp/builderp-bundle.tar.gz"
+
+          ssh -i ~/.ssh/deploy_key -p "${PORT:-22}" "${USER}@${HOST}" <<'REMOTE'
+            set -euo pipefail
+            cd /var/www/builderp
+
+            rm -rf apps/api/dist apps/web/dist packages/shared/dist
+            tar -xzf /tmp/builderp-bundle.tar.gz -C /var/www/builderp
+            rm -f /tmp/builderp-bundle.tar.gz
+
+            pnpm --filter-prod "@builderp/api..." install --prod --frozen-lockfile
+            chmod -R a+rX /var/www/builderp/apps/web/dist
+
+            pm2 startOrReload /var/www/builderp/ecosystem.config.cjs --update-env
+            pm2 save
+            sleep 3
+            curl -fsS -H "X-Tenant: kings" http://127.0.0.1:3010/api/v1/health
+          REMOTE
