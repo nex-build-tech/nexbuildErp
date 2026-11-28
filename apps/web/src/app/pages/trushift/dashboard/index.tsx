@@ -1,6 +1,12 @@
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Page } from "@/components/shared/Page";
 import { Card, Button, Badge } from "@/components/ui";
+import axios from "@/utils/axios";
+import {
+  AttendanceCheckInModal,
+  type AssignedSiteOption,
+} from "@/components/trushift/AttendanceCheckInModal";
 import {
   ClockIcon,
   MapPinIcon,
@@ -11,9 +17,36 @@ import {
   BuildingOffice2Icon,
   ArrowRightIcon,
   DevicePhoneMobileIcon,
+  CameraIcon,
 } from "@heroicons/react/24/outline";
 
 export default function TrushiftDashboardPage() {
+  const [checkInOpen, setCheckInOpen] = useState(false);
+  const [assignedSites, setAssignedSites] = useState<AssignedSiteOption[]>([]);
+  const [livePunches, setLivePunches] = useState<any[]>([]);
+
+  const fetchDashboardAttendance = useCallback(async () => {
+    try {
+      const [sitesRes, logsRes] = await Promise.all([
+        axios.get("/trushift/assigned-sites").catch(() => null),
+        axios.get("/trushift/logs").catch(() => null),
+      ]);
+      const siteData = sitesRes?.data?.data || sitesRes?.data;
+      if (Array.isArray(siteData?.sites)) {
+        setAssignedSites(siteData.sites);
+      }
+      const logsData = logsRes?.data?.data || logsRes?.data;
+      if (Array.isArray(logsData?.logs)) {
+        setLivePunches(logsData.logs);
+      }
+    } catch {
+      // keep existing fallback view if unavailable
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchDashboardAttendance();
+  }, [fetchDashboardAttendance]);
 
   const kpis = [
     {
@@ -187,10 +220,21 @@ export default function TrushiftDashboardPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outlined" className="flex items-center gap-1.5 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outlined"
+              onClick={() => void fetchDashboardAttendance()}
+              className="flex items-center gap-1.5 text-xs"
+            >
               <ArrowPathIcon className="w-4 h-4" />
               Refresh Feed
+            </Button>
+            <Button
+              onClick={() => setCheckInOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 text-xs"
+            >
+              <CameraIcon className="w-4 h-4" />
+              Mark GPS Attendance
             </Button>
             <Link to="/trushift/muster-roll">
               <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 text-xs">
@@ -200,6 +244,12 @@ export default function TrushiftDashboardPage() {
             </Link>
           </div>
         </div>
+
+        <AttendanceCheckInModal
+          open={checkInOpen}
+          onClose={() => setCheckInOpen(false)}
+          onSuccess={() => void fetchDashboardAttendance()}
+        />
 
         {/* KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -357,6 +407,11 @@ export default function TrushiftDashboardPage() {
               </h2>
               <p className="text-xs text-gray-500">
                 Real-time stream of check-ins captured with GPS coordinates and geofence verification
+                {assignedSites.length > 0 && (
+                  <span className="ml-2 text-indigo-600 font-medium">
+                    • {assignedSites.length} assigned site(s)
+                  </span>
+                )}
               </p>
             </div>
             <Link to="/trushift/logs">
@@ -381,7 +436,22 @@ export default function TrushiftDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {recentPunches.map((punch) => (
+                {(livePunches.length > 0
+                  ? livePunches.slice(0, 8).map((p) => ({
+                      id: p.uuid?.slice(0, 8).toUpperCase() || `P-${p.id}`,
+                      name: p.staffName || p.username,
+                      role: p.roleName || "Site Staff",
+                      site: p.siteName,
+                      time: new Date(p.punchedAt).toLocaleTimeString("en-IN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                      method: "GPS + Watermarked Photo",
+                      geofenceStatus: `Inside (${Math.round(Number(p.distanceMeters))}m / ${p.geofenceRadiusMeters}m)`,
+                      valid: Boolean(p.geofenceVerified),
+                    }))
+                  : recentPunches
+                ).map((punch) => (
                   <tr key={punch.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td className="py-3 px-4 font-mono text-gray-500">{punch.id}</td>
                     <td className="py-3 px-4 font-semibold text-gray-900 dark:text-gray-100">

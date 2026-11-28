@@ -22,6 +22,7 @@ export interface AuthContextType {
   tenant: TenantInfo | null;
   login: (credentials: { username: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 }
 
 export const [AuthProvider, useAuthContext] =

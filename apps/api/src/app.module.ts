@@ -21,6 +21,7 @@ import { TallyModule } from './integrations/tally/tally.module';
 import { SuperAdminModule } from './super-admin/super-admin.module';
 import { RealtyModule } from './realty/realty.module';
 import { RolesModule } from './roles/roles.module';
+import { TrushiftModule } from './trushift/trushift.module';
 import { TenantMiddleware } from './common/middleware/tenant.middleware';
 
 const pinoParams: Params = {
@@ -84,6 +85,7 @@ const pinoParams: Params = {
     SuperAdminModule,
     RealtyModule,
     RolesModule,
+    TrushiftModule,
   ],
 })
 export class AppModule implements NestModule {

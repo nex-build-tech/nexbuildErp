@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   Req,
   Res,
@@ -12,7 +13,14 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto, EnableTotpDto, VerifyTotpDto, DisableTotpDto } from './dto/login.dto';
+import {
+  LoginDto,
+  RefreshTokenDto,
+  EnableTotpDto,
+  VerifyTotpDto,
+  DisableTotpDto,
+  UpdateProfileDto,
+} from './dto/login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, CurrentTenant } from './decorators/auth.decorators';
 import { TenantContext } from '../common/middleware/tenant.middleware';
@@ -145,6 +153,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current logged in user profile, permissions, and tenant' })
   async getMe(@CurrentUser('id') userId: number) {
     return this.authService.getMe(userId);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Complete or update current user profile on first login' })
+  async updateProfile(
+    @CurrentUser('id') userId: number,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(userId, dto);
   }
 }
 

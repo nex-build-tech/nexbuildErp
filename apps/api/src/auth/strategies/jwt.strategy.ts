@@ -65,6 +65,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roleId: user.roleId,
       roleCode: role.code,
       roleName: role.name,
+      profileCompleted: Boolean(
+        user.profileCompleted &&
+        user.fullName?.trim() &&
+        user.email?.trim() &&
+        user.phone?.trim(),
+      ),
       permissions: permissionCodes,
     };
   }

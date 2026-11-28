@@ -53,6 +53,12 @@ const protectedRoutes: RouteObject = {
   id: "protected",
   Component: AuthGuard,
   children: [
+    {
+      path: "profile-setup",
+      lazy: async () => ({
+        Component: (await import("@/app/pages/Auth/ProfileSetup")).default,
+      }),
+    },
     // The dynamic layout supports both the main layout and the sideblock.
     {
       Component: DynamicLayout,

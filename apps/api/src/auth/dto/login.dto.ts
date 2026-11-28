@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MinLength, IsOptional, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsString, MinLength, MaxLength, IsOptional, IsNumber, IsEmail } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -64,4 +64,32 @@ export class DisableTotpDto {
   @IsString()
   @IsOptional()
   code?: string;
+}
+
+export class UpdateProfileDto {
+  @ApiProperty({ example: 'Affan Khan', description: 'Employee full name' })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(150)
+  fullName!: string;
+
+  @ApiProperty({ example: '+91 98201 12345', description: 'Contact phone number' })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  @MaxLength(20)
+  phone!: string;
+
+  @ApiProperty({ example: 'affan@kingsbuilders.com', description: 'Work email address' })
+  @IsEmail()
+  @IsNotEmpty()
+  @MaxLength(255)
+  email!: string;
+
+  @ApiPropertyOptional({ description: 'Optional profile avatar URL' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  avatarUrl?: string;
 }

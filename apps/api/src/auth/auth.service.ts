@@ -13,9 +13,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { generateSecret, generateURI, verifySync } from 'otplib';
 import * as QRCode from 'qrcode';
 import { DatabaseService } from '../database/database.service';
-import { users, roles, tenants, refreshTokens, auditLogs, rolePermissions, permissions, tenantModules } from '../database/schema';
-import { eq, and, gt, isNull } from 'drizzle-orm';
-import { LoginDto } from './dto/login.dto';
+import { users, roles, tenants, refreshTokens, auditLogs, rolePermissions, permissions, tenantModules, userSites, sites } from '../database/schema';
+import { eq, and, gt, isNull, ne } from 'drizzle-orm';
+import { LoginDto, UpdateProfileDto } from './dto/login.dto';
 import { TenantContext } from '../common/middleware/tenant.middleware';
 
 @Injectable()
@@ -158,6 +158,8 @@ export class AuthService {
       userAgent: userAgent || 'unknown',
     });
 
+    const assignedSites = await this.getUserAssignedSites(tenant.id, user.id);
+
     return {
       accessToken,
       refreshToken: rawRefreshToken,
@@ -169,6 +171,9 @@ export class AuthService {
         phone: user.phone,
         avatarUrl: user.avatarUrl,
         totpEnabled: user.totpEnabled,
+        profileCompleted: this.isProfileComplete(user),
+        profileCompletedAt: user.profileCompletedAt,
+        assignedSites,
         role: {
           id: role.id,
           code: role.code,
@@ -503,6 +508,8 @@ export class AuthService {
       .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
       .where(eq(rolePermissions.roleId, user.roleId));
 
+    const assignedSites = await this.getUserAssignedSites(tenant.id, user.id);
+
     return {
       user: {
         id: user.id,
@@ -513,6 +520,9 @@ export class AuthService {
         phone: user.phone,
         avatarUrl: user.avatarUrl,
         totpEnabled: user.totpEnabled,
+        profileCompleted: this.isProfileComplete(user),
+        profileCompletedAt: user.profileCompletedAt,
+        assignedSites,
         role: {
           id: role.id,
           code: role.code,
@@ -535,6 +545,117 @@ export class AuthService {
         modules: await this.getTenantModulesList(tenant.id),
       },
     };
+  }
+
+  /**
+   * Complete or update user profile on first login
+   */
+  async updateProfile(userId: number, dto: UpdateProfileDto) {
+    const [existing] = await this.databaseService.db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!existing) {
+      throw new NotFoundException('User not found');
+    }
+
+    const fullName = dto.fullName.trim();
+    const phone = dto.phone.trim();
+    const email = dto.email.trim().toLowerCase();
+
+    if (!fullName || !phone || !email) {
+      throw new BadRequestException('Full name, phone, and email are required to complete profile setup.');
+    }
+
+    if (existing.tenantId !== null) {
+      const [duplicate] = await this.databaseService.db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.tenantId, existing.tenantId),
+            eq(users.email, email),
+            ne(users.id, userId),
+            isNull(users.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (duplicate) {
+        throw new BadRequestException('Email address is already in use by another account in this organization.');
+      }
+    }
+
+    const now = new Date();
+    await this.databaseService.db
+      .update(users)
+      .set({
+        fullName,
+        phone,
+        email,
+        ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl.trim() || null } : {}),
+        profileCompleted: true,
+        profileCompletedAt: existing.profileCompletedAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(users.id, userId));
+
+    if (existing.tenantId !== null) {
+      await this.databaseService.db.insert(auditLogs).values({
+        tenantId: existing.tenantId,
+        userId,
+        action: 'auth.profile_complete',
+        entity: 'user',
+        entityId: String(userId),
+        diffJson: { fullName, phone, email },
+      });
+    }
+
+    return this.getMe(userId);
+  }
+
+  /**
+   * Determines whether a user has completed mandatory profile setup
+   */
+  private isProfileComplete(user: typeof users.$inferSelect): boolean {
+    return Boolean(
+      user.profileCompleted &&
+      user.fullName?.trim() &&
+      user.email?.trim() &&
+      user.phone?.trim(),
+    );
+  }
+
+  /**
+   * Returns sites assigned to the user via user_sites
+   */
+  private async getUserAssignedSites(tenantId: number, userId: number) {
+    try {
+      return await this.databaseService.db
+        .select({
+          id: sites.id,
+          code: sites.code,
+          name: sites.name,
+          companyId: sites.companyId,
+          latitude: sites.latitude,
+          longitude: sites.longitude,
+          geofenceRadius: sites.geofenceRadius,
+          status: sites.status,
+        })
+        .from(userSites)
+        .innerJoin(sites, eq(userSites.siteId, sites.id))
+        .where(
+          and(
+            eq(userSites.userId, userId),
+            eq(sites.tenantId, tenantId),
+            isNull(sites.deletedAt),
+          ),
+        );
+    } catch {
+      return [];
+    }
   }
 
   /**

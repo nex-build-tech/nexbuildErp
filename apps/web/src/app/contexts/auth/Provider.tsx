@@ -16,6 +16,7 @@ interface AuthAction {
     | "LOGIN_REQUEST"
     | "LOGIN_SUCCESS"
     | "LOGIN_ERROR"
+    | "UPDATE_USER"
     | "LOGOUT";
   payload?: Partial<AuthContextType>;
 }
@@ -30,6 +31,7 @@ const initialState: AuthContextType = {
   tenant: null,
   login: async () => {},
   logout: async () => {},
+  refreshUser: async () => null,
 };
 
 // Reducer handlers
@@ -64,6 +66,12 @@ const reducerHandlers: Record<
     ...state,
     errorMessage: action.payload?.errorMessage ?? "An error occurred",
     isLoading: false,
+  }),
+
+  UPDATE_USER: (state, action) => ({
+    ...state,
+    user: action.payload?.user ?? state.user,
+    tenant: action.payload?.tenant ?? state.tenant,
   }),
 
   LOGOUT: (state) => ({
@@ -189,6 +197,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshUser = async (): Promise<User | null> => {
+    const response = await axios.get("/auth/me");
+    const resData = response.data?.data || response.data;
+    const user = resData?.user as User;
+    const tenant = resData?.tenant;
+
+    if (user) {
+      user.name = user.fullName || user.username;
+      dispatch({
+        type: "UPDATE_USER",
+        payload: { user, tenant },
+      });
+      return user;
+    }
+
+    return null;
+  };
+
   if (!children) {
     return null;
   }
@@ -199,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...state,
         login,
         logout,
+        refreshUser,
       }}
     >
       {children}

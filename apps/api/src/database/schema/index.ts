@@ -149,6 +149,8 @@ export const users = mysqlTable(
     failedLoginAttempts: int('failed_login_attempts').default(0).notNull(),
     lockedUntil: timestamp('locked_until'),
     lastLoginAt: timestamp('last_login_at'),
+    profileCompleted: boolean('profile_completed').default(false).notNull(),
+    profileCompletedAt: timestamp('profile_completed_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().onUpdateNow().notNull(),
     deletedAt: timestamp('deleted_at'),
@@ -1080,6 +1082,32 @@ export const boqItems = mysqlTable(
     index('boq_tenant_site_idx').on(table.tenantId, table.siteId),
     index('boq_item_code_idx').on(table.itemCode),
     uniqueIndex('boq_tenant_site_item_pkg_idx').on(table.tenantId, table.siteId, table.itemCode, table.workPackage),
+  ]
+);
+
+// ── 41. STAFF ATTENDANCE LOGS (GEOFENCED + WATERMARKED PHOTO) ───────────────
+export const staffAttendanceLogs = mysqlTable(
+  'staff_attendance_logs',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().autoincrement(),
+    uuid: varchar('uuid', { length: 36 }).notNull().unique(),
+    tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    siteId: bigint('site_id', { mode: 'number' }).notNull(),
+    punchType: mysqlEnum('punch_type', ['check_in', 'check_out']).default('check_in').notNull(),
+    latitude: decimal('latitude', { precision: 10, scale: 7 }).notNull(),
+    longitude: decimal('longitude', { precision: 10, scale: 7 }).notNull(),
+    distanceMeters: decimal('distance_meters', { precision: 10, scale: 2 }).notNull(),
+    geofenceRadiusMeters: int('geofence_radius_meters').notNull(),
+    geofenceVerified: boolean('geofence_verified').default(true).notNull(),
+    photoUrl: varchar('photo_url', { length: 500 }).notNull(),
+    remarks: varchar('remarks', { length: 500 }),
+    punchedAt: timestamp('punched_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('staff_att_tenant_user_idx').on(table.tenantId, table.userId, table.punchedAt),
+    index('staff_att_tenant_site_idx').on(table.tenantId, table.siteId, table.punchedAt),
   ]
 );
 

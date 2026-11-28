@@ -7,6 +7,7 @@ import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -26,6 +27,8 @@ async function bootstrap(): Promise<void> {
   app.use(helmet());
   app.use(compression());
   app.use(cookieParser());
+  app.use(json({ limit: '8mb' }));
+  app.use(urlencoded({ extended: true, limit: '8mb' }));
 
   // ── CORS ───────────────────────────────────────────────────────────────
   const config = app.get(ConfigService);

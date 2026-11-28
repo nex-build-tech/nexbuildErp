@@ -9,7 +9,7 @@ import { GHOST_ENTRY_PATH, REDIRECT_URL_KEY } from "@/constants/app";
 
 export default function AuthGuard() {
   const outlet = useOutlet();
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, user } = useAuthContext();
 
   const location = useLocation();
 
@@ -20,6 +20,19 @@ export default function AuthGuard() {
         replace
       />
     );
+  }
+
+  if (user && user.profileCompleted === false && location.pathname !== "/profile-setup") {
+    return (
+      <Navigate
+        to={`/profile-setup?${REDIRECT_URL_KEY}=${encodeURIComponent(location.pathname)}`}
+        replace
+      />
+    );
+  }
+
+  if (user && user.profileCompleted !== false && location.pathname === "/profile-setup") {
+    return <Navigate to="/" replace />;
   }
 
   return <>{outlet}</>;

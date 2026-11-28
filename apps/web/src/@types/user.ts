@@ -1,3 +1,14 @@
+export interface AssignedSite {
+  id: number;
+  code: string;
+  name: string;
+  companyId?: number | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  geofenceRadius?: number;
+  status?: string;
+}
+
 export interface UserRole {
   id: number;
   code: string;
@@ -14,6 +25,9 @@ export interface User {
   phone?: string | null;
   role: UserRole | string;
   avatarUrl?: string | null;
+  profileCompleted?: boolean;
+  profileCompletedAt?: string | null;
+  assignedSites?: AssignedSite[];
   permissions?: string[];
 }
 
